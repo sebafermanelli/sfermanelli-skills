@@ -11,6 +11,8 @@ Make code readable, consistent, and maintainable — without changing what it do
 
 Clean code changes are **behavior-preserving**. The code does exactly the same thing before and after. If you need to change structure or logic, that's refactoring — a different skill.
 
+> "Clean code always looks like it was written by someone who cares." — Robert C. Martin
+
 ---
 
 ## 1. Meaningful Names
@@ -59,29 +61,17 @@ function getAccountWithOrders() { ... }
 function getAccountSummary() { ... }
 ```
 
-### Pronounceable Names
-
-If you can't say it in a conversation, rename it:
+### Pronounceable and Searchable Names
 
 ```typescript
-// Bad
+// Bad — can't say it, can't grep it
 const genymdhms = new Date()
-
-// Good
-const generatedAt = new Date()
-```
-
-### Searchable Names
-
-Single-letter names and magic numbers are impossible to grep:
-
-```typescript
-// Bad — try searching for '7' or 'e' in a codebase
 for (let i = 0; i < 7; i++) {
   s += t[i] * e
 }
 
 // Good
+const generatedAt = new Date()
 const DAYS_PER_WEEK = 7
 for (let day = 0; day < DAYS_PER_WEEK; day++) {
   total += taskEstimate[day] * hoursPerDay
@@ -106,15 +96,19 @@ const description = ''
 
 ### Naming Convention Summary
 
-| Thing          | Pattern           | Example                                |
-| -------------- | ----------------- | -------------------------------------- |
-| Functions      | verb + noun       | `calculateFees`, `sendNotification`    |
-| Booleans       | is/has/can/should | `isActive`, `hasPermission`, `canEdit` |
-| Collections    | plural            | `orders`, `activeStores`               |
-| Constants      | SCREAMING_SNAKE   | `MAX_FILE_SIZE`, `PAGE_SIZE`           |
-| Components     | PascalCase, noun  | `StoreCard`, `OrderHeader`             |
-| Hooks          | use + verb/noun   | `useCart`, `usePagination`             |
-| Event handlers | handle + event    | `handleSubmit`, `handleClick`          |
+| Thing          | Pattern              | Example                                   |
+| -------------- | -------------------- | ----------------------------------------- |
+| Functions      | verb + noun          | `calculateFees`, `sendNotification`       |
+| Booleans       | is/has/can/should    | `isActive`, `hasPermission`, `canEdit`    |
+| Collections    | plural               | `orders`, `activeStores`                  |
+| Constants      | SCREAMING_SNAKE      | `MAX_FILE_SIZE`, `PAGE_SIZE`              |
+| Components     | PascalCase, noun     | `StoreCard`, `OrderHeader`                |
+| Hooks          | use + verb/noun      | `useCart`, `usePagination`                |
+| Event handlers | handle + event       | `handleSubmit`, `handleClick`             |
+| Interfaces     | noun (no I prefix)   | `OrderRepository`, `PaymentGateway`       |
+| Type params    | descriptive or T     | `TEntity`, `TResult`, `K extends keyof T` |
+| Enums          | PascalCase singular  | `OrderStatus`, `PaymentMethod`            |
+| Private fields | no underscore prefix | TypeScript `private` keyword is enough    |
 
 ---
 
@@ -178,6 +172,37 @@ function createOrder(storeId, startDate, endDate, items, userId) { ... }
 function createOrder(params: CreateOrderParams) { ... }
 ```
 
+### Guard Clauses (Early Returns)
+
+Flatten nested conditionals with early returns:
+
+```typescript
+// Bad — nested
+function getDiscount(customer: Customer, order: Order): number {
+  if (customer.isVip) {
+    if (order.total > 10000) {
+      return 0.2
+    } else {
+      return 0.1
+    }
+  } else {
+    if (order.total > 20000) {
+      return 0.05
+    } else {
+      return 0
+    }
+  }
+}
+
+// Good — guard clauses
+function getDiscount(customer: Customer, order: Order): number {
+  if (customer.isVip && order.total > 10000) return 0.2
+  if (customer.isVip) return 0.1
+  if (order.total > 20000) return 0.05
+  return 0
+}
+```
+
 ### No Side Effects
 
 A function named `checkPassword` should NOT also initialize a session. Do what the name says, nothing more.
@@ -196,75 +221,123 @@ if (attributeExists('username')) {
 }
 ```
 
-### Prefer Exceptions to Error Codes
+---
 
-Error codes force nested ifs. Exceptions separate the happy path from error handling.
+## 3. TypeScript-Specific Clean Patterns
 
-### The Writing Process
+### Use `readonly` for Immutability
 
-Writing clean functions is like writing prose: first draft gets it working, second draft makes it clean. Write it, then polish — extract functions, rename variables, remove duplication. Don't expect perfection on the first pass.
+```typescript
+// Bad — mutable when it shouldn't be
+interface Config {
+  port: number
+  host: string
+}
+
+// Good — signal that this shouldn't change
+interface Config {
+  readonly port: number
+  readonly host: string
+}
+
+// For arrays
+function process(items: readonly OrderItem[]) {
+  items.push(newItem) // Compile error! Can't mutate readonly array
+}
+```
+
+### Prefer Type Narrowing Over Casting
+
+```typescript
+// Bad — lying to the compiler
+const user = response.data as User
+
+// Good — verify at runtime
+function isUser(data: unknown): data is User {
+  return typeof data === 'object' && data !== null && 'id' in data && 'email' in data
+}
+
+if (isUser(response.data)) {
+  console.log(response.data.email) // Safe — narrowed
+}
+```
+
+### Use Discriminated Unions Over Type Casting
+
+```typescript
+// Bad — check string then cast
+function handle(event: Event) {
+  if (event.type === 'click') {
+    const mouseEvent = event as MouseEvent // Casting
+  }
+}
+
+// Good — discriminated union
+type AppEvent =
+  | { type: 'order.created'; order: Order }
+  | { type: 'order.cancelled'; orderId: string; reason: string }
+  | { type: 'payment.received'; payment: Payment }
+
+function handle(event: AppEvent) {
+  switch (event.type) {
+    case 'order.created':
+      console.log(event.order) // TypeScript knows this is Order
+      break
+    case 'order.cancelled':
+      console.log(event.reason) // TypeScript knows this is string
+      break
+  }
+}
+```
+
+### Prefer `const` Assertions for Literal Types
+
+```typescript
+// Without as const — type is string[]
+const STATUSES = ['draft', 'placed', 'shipped']
+// type: string[]
+
+// With as const — type is readonly ["draft", "placed", "shipped"]
+const STATUSES = ['draft', 'placed', 'shipped'] as const
+// type: readonly ["draft", "placed", "shipped"]
+type Status = (typeof STATUSES)[number] // "draft" | "placed" | "shipped"
+```
 
 ---
 
-## 3. Comments
+## 4. Comments
 
 Comments should explain WHY, not WHAT. If you need a comment to explain what the code does, rewrite the code to be self-explanatory.
 
 ### Good Comments
 
-**Explaining intent — WHY this decision was made:**
-
 ```typescript
+// Explaining intent — WHY this decision was made
 // We use a 60-second window because profiles are created by a DB trigger
 // before the OAuth callback completes
 const isNewUser = Date.now() - createdAt < 60_000
-```
 
-**Explaining context that isn't obvious:**
-
-```typescript
+// Explaining non-obvious context
 // PostgREST's .or() accepts raw filter strings supporting ::text casting,
 // unlike .filter() which doesn't
 query = query.or(`id::text.ilike.%${searchTerm}%`)
-```
 
-**Warnings about consequences:**
-
-```typescript
+// Warnings about consequences
 // WARNING: Clears ALL sessions globally, not just the current one.
 // Used only for admin ban operations.
 await service.auth.admin.signOut(userId, 'global')
-```
 
-**TODOs with context and owner:**
-
-```typescript
+// TODOs with context and owner
 // TODO(seb): Replace with batch API when available — currently 1 req/sec
 ```
 
 ### Bad Comments — Remove These
 
-**Redundant** — restating what the code already says:
-
-```typescript
-// Bad: Set the name
-const name = user.displayName // delete the comment
-```
-
-**Noise** — zero information added:
-
-```typescript
-// Bad: Default constructor
-constructor() { }
-```
-
-**Misleading** — says one thing, code does another
-
-**Commented-out code** — git exists for history
-
-**Changelog/version comments** — that's what git log is for
-
-**Journal comments** — don't maintain a changelog in the file
+- **Redundant** — restating what the code already says
+- **Noise** — `// Default constructor`, `// The user's name`
+- **Misleading** — says one thing, code does another
+- **Commented-out code** — git exists for history
+- **Changelog/journal comments** — that's what git log is for
 
 ### The Refactoring Principle
 
@@ -281,9 +354,7 @@ if (employee.isEligibleForBenefits()) { ... }
 
 ---
 
-## 4. Formatting
-
-Code formatting is about communication. Well-formatted code tells a story top to bottom.
+## 5. Formatting
 
 ### The Newspaper Metaphor
 
@@ -306,22 +377,6 @@ if (!user) return { error: 'notAuthenticated' }
 const { data: store } = await supabase.from('stores').select('id, name').eq('id', storeId).single()
 ```
 
-### Horizontal Alignment
-
-Don't over-align — it draws attention to the wrong thing:
-
-```typescript
-// Bad
-const name = 'John'
-const age = 30
-const emailAddress = 'john@example.com'
-
-// Good
-const name = 'John'
-const age = 30
-const emailAddress = 'john@example.com'
-```
-
 ### Placement Rules
 
 - **Imports** at the top, grouped: external → internal → relative
@@ -331,7 +386,61 @@ const emailAddress = 'john@example.com'
 
 ---
 
-## 5. Dead Code Removal
+## 6. The Law of Demeter
+
+"Talk to friends, not to strangers." Don't chain through objects you don't own:
+
+```typescript
+// Bad — reaching through multiple objects
+const zip = order.customer.address.shippingAddress.zipCode
+
+// Good — ask the object to do its job
+const zip = order.getShippingZipCode()
+
+// Bad — exposing internal structure
+user.getAccount().getBalance().subtract(amount)
+
+// Good — tell, don't ask
+user.charge(amount)
+```
+
+---
+
+## 7. DRY with Nuance
+
+**Don't Repeat Yourself** — but duplication is better than the wrong abstraction.
+
+```typescript
+// Obvious DRY — extract shared logic
+// Before: same validation in 3 places
+if (!email || !email.includes('@')) throw new Error('Invalid email')
+
+// After: shared utility
+function validateEmail(email: string): void {
+  if (!email || !email.includes('@')) throw new InvalidEmailError(email)
+}
+```
+
+```typescript
+// Wrong DRY — forced abstraction
+// Two functions look similar but serve different purposes
+function formatUserName(user: User) {
+  return `${user.first} ${user.last}`
+}
+function formatOrderRecipient(order: Order) {
+  return `${order.recipientFirst} ${order.recipientLast}`
+}
+
+// DON'T abstract into formatName(first, last) just because they look similar
+// They evolve independently: user names might add middle names,
+// order recipients might add company names
+```
+
+> "Duplication is far cheaper than the wrong abstraction." — Sandi Metz
+
+---
+
+## 8. Dead Code Removal
 
 Remove anything not used:
 
@@ -340,10 +449,22 @@ Remove anything not used:
 - Unreachable code after `return`, `throw`, `break`
 - Empty catch blocks, empty if branches
 - Unused dependencies in `package.json`
+- Unused types/interfaces
+
+```bash
+# Find unused exports
+npx ts-prune
+
+# Find unused dependencies
+npx depcheck
+
+# TypeScript compiler catches unused locals
+# tsconfig.json: "noUnusedLocals": true, "noUnusedParameters": true
+```
 
 ---
 
-## 6. Professional Standards
+## 9. Professional Standards
 
 - **Consistency over preference** — follow the project's existing style, not your personal preference
 - **Boy Scout Rule** — leave the code cleaner than you found it, but don't rewrite the whole file
@@ -358,11 +479,17 @@ Remove anything not used:
 ## Clean Code Summary
 
 ### Naming (X improvements)
-- `d` → `createdDate`, `u` → `user`, `res` → `response`
+- `d` → `timeSinceCreation`, `u` → `user`, `res` → `response`
 
 ### Functions (X improvements)
 - Reduced 80-line function to 25 lines by extracting helpers
 - Converted 5-arg function to object parameter
+- Added guard clauses to flatten 3 nested conditionals
+
+### TypeScript (X improvements)
+- Replaced 2 `as` casts with type guards
+- Added `readonly` to 3 interfaces
+- Replaced string union with discriminated union
 
 ### Comments (X changes)
 - Removed 8 redundant comments
@@ -388,3 +515,5 @@ Remove anything not used:
 - **The Art of Readable Code** — Dustin Boswell & Trevor Foucher
 - **Code Complete** — Steve McConnell
 - **The Pragmatic Programmer** — Andrew Hunt & David Thomas
+- **Effective TypeScript** — Dan Vanderkam
+- **Refactoring** — Martin Fowler (for the "wrong abstraction" principle via Sandi Metz)
