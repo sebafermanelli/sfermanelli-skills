@@ -1,11 +1,11 @@
 ---
 name: sfermanelli-write-docs
-description: Generate clear, maintainable documentation for code — JSDoc/TSDoc, README, API docs, module overviews. Use this skill when the user asks to document code, add JSDoc, generate docs, write a README, explain an API surface, or says things like "document this", "add types docs", "this needs documentation", "write API docs". Distinct from explain-code (which is conversational) — this produces documentation artifacts that live in the codebase.
+description: Generate clear, maintainable documentation for code — JSDoc/TSDoc, README, API docs, module overviews, and project specs. Use this skill when the user asks to document code, add JSDoc, generate docs, write a README, explain an API surface, write specs, create business rules docs, define bounded contexts, or says things like "document this", "add types docs", "this needs documentation", "write API docs", "write a spec", "spec this feature", "document business rules". Distinct from explain-code (which is conversational) — this produces documentation artifacts that live in the codebase.
 ---
 
 # Write Docs
 
-Generate documentation that developers actually read. Good docs reduce onboarding time, prevent misuse, and serve as a contract between modules. Documentation should be accurate, concise, and maintained alongside the code it describes.
+Generate documentation that developers actually read — and that AI models can consume. Good docs reduce onboarding time, prevent misuse, and serve as a contract between modules. Specs capture business rules, domain knowledge, and project constraints as structured markdown that both humans and AI tools can reason about. Documentation should be accurate, concise, and maintained alongside the code it describes.
 
 ## Golden Rule
 
@@ -766,6 +766,319 @@ if (order.isValidForCheckout()) { ... }
 
 ---
 
+## 9. Spec-Driven Design
+
+Specs are **structured markdown files** that capture business rules, domain knowledge, bounded contexts, and project constraints in a format that is both human-readable and AI-consumable. They act as the **single source of truth** for decisions that live outside the code — the "why" and "what" that shapes the "how".
+
+> "The biggest issue in software development is not technical — it's the gap between what the business means and what the developer builds." — Eric Evans, Domain-Driven Design
+
+### Why Specs Matter in the AI Era
+
+- **AI models need context** — An LLM reading your codebase sees the implementation, but not the business intent. Specs bridge that gap.
+- **Specs outlive conversations** — A Slack thread or meeting note disappears. A spec in the repo is versioned, reviewable, and always accessible.
+- **Specs reduce hallucination** — When an AI tool has explicit rules to follow, it generates code that aligns with actual business requirements.
+- **Specs enable autonomy** — A developer (or AI agent) with access to specs can make decisions without asking the same questions again.
+
+### Directory Structure
+
+```
+specs/
+├── domain/                    # Bounded contexts and domain models
+│   ├── orders.md
+│   ├── payments.md
+│   ├── inventory.md
+│   └── customers.md
+├── business-rules/            # Cross-cutting business rules
+│   ├── pricing.md
+│   ├── shipping.md
+│   └── promotions.md
+├── features/                  # Feature specs (what to build)
+│   ├── checkout-flow.md
+│   └── subscription-management.md
+├── integrations/              # External system contracts
+│   ├── stripe.md
+│   ├── sendgrid.md
+│   └── warehouse-api.md
+└── glossary.md                # Ubiquitous language definitions
+```
+
+### Spec File Format
+
+Every spec uses consistent frontmatter so it can be indexed and filtered:
+
+```markdown
+---
+title: Order Management
+type: domain # domain | business-rules | feature | integration
+bounded-context: orders
+owner: backend-team
+status: active # draft | active | deprecated
+last-reviewed: 2025-12-01
+---
+
+# Order Management
+
+One sentence: what this spec covers and why it exists.
+
+## Ubiquitous Language
+
+| Term            | Definition                                                     |
+| --------------- | -------------------------------------------------------------- |
+| **Order**       | A customer's intent to purchase one or more products.          |
+| **Line Item**   | A single product + quantity within an order.                   |
+| **Fulfillment** | The process of picking, packing, and shipping an order.        |
+| **Back-order**  | An order accepted when stock is insufficient, fulfilled later. |
+
+## Invariants
+
+Rules that must ALWAYS hold true. Code that violates these is a bug.
+
+- An order MUST have at least 1 line item
+- Order total MUST equal the sum of (line item price × quantity) minus discounts plus tax
+- An order in `SHIPPED` status CANNOT be cancelled — it must go through the return flow
+- A customer CANNOT have more than 3 pending orders simultaneously
+
+## Business Rules
+
+Rules that drive behavior. These may change as the business evolves.
+
+### Pricing
+
+- Discounts are applied BEFORE tax (pre-tax discount model)
+- All monetary values are stored in the smallest currency unit (cents)
+- Multi-currency orders are NOT supported — all items must share the order's currency
+
+### Status Transitions
+```
+
+DRAFT → PLACED → PROCESSING → SHIPPED → DELIVERED
+↓
+DRAFT → CANCELLED RETURNED
+PLACED → CANCELLED
+
+```
+
+- Only `DRAFT` and `PLACED` orders can be cancelled directly
+- Cancellation after `PROCESSING` requires manager approval
+- `DELIVERED` → `RETURNED` has a 30-day window
+
+### Notifications
+
+- Send confirmation email on `DRAFT → PLACED`
+- Send shipping notification on `PROCESSING → SHIPPED` with tracking URL
+- Send delivery confirmation on `SHIPPED → DELIVERED`
+
+## Domain Events
+
+Events that other bounded contexts may react to:
+
+| Event                | Payload                              | Consumers                  |
+| -------------------- | ------------------------------------ | -------------------------- |
+| `OrderPlaced`        | orderId, customerId, items, total    | Inventory, Payments, Email |
+| `OrderCancelled`     | orderId, reason, cancelledBy         | Inventory, Payments        |
+| `OrderShipped`       | orderId, trackingNumber, carrier     | Email, Analytics           |
+| `OrderDelivered`     | orderId, deliveredAt                 | Email, Analytics           |
+
+## Relationships
+
+- **Payments** — An order triggers payment authorization on `PLACED`. Refund on `CANCELLED`/`RETURNED`.
+- **Inventory** — Stock is reserved on `PLACED`, released on `CANCELLED`, decremented on `SHIPPED`.
+- **Customers** — Order history feeds into customer segmentation and loyalty tier calculation.
+```
+
+### Business Rules Spec
+
+For cross-cutting rules that span multiple bounded contexts:
+
+```markdown
+---
+title: Pricing Rules
+type: business-rules
+owner: product-team
+status: active
+last-reviewed: 2025-11-15
+---
+
+# Pricing Rules
+
+## Discount Hierarchy
+
+When multiple discounts apply, use this precedence (highest to lowest):
+
+1. **Manual override** — Admin-set price (e.g., damage compensation)
+2. **Loyalty tier discount** — Based on customer tier (Gold: 10%, Platinum: 15%)
+3. **Promotional code** — Single-use or multi-use codes
+4. **Volume discount** — Automatic when quantity exceeds threshold
+
+Only ONE discount per level applies. If a customer has a loyalty discount AND a promo code, both apply (they are at different levels). Two promo codes do NOT stack.
+
+## Tax Calculation
+
+- Tax is calculated AFTER all discounts are applied
+- Tax rates come from the `tax-rates` service based on shipping address
+- Digital products use the customer's billing address for tax jurisdiction
+- B2B orders with valid tax ID are tax-exempt (EU VAT reverse charge)
+
+## Price Guarantees
+
+- A product's price at the time of `PLACED` is locked for that order
+- Price changes after `PLACED` do NOT affect existing orders
+- Cart prices expire after 30 minutes — re-validate on checkout
+```
+
+### Feature Spec
+
+For describing what to build — the contract between product and engineering:
+
+```markdown
+---
+title: Subscription Management
+type: feature
+bounded-context: payments
+owner: payments-team
+status: draft
+target-date: 2026-04-15
+---
+
+# Subscription Management
+
+## Goal
+
+Allow customers to subscribe to recurring plans, upgrade/downgrade, and cancel with prorated billing.
+
+## User Stories
+
+- As a customer, I can subscribe to a plan so that I get recurring access
+- As a customer, I can upgrade my plan mid-cycle so that I get more features immediately
+- As a customer, I can cancel my subscription so that I stop being charged
+- As an admin, I can view subscription metrics so that I understand revenue trends
+
+## Rules
+
+- Upgrades take effect immediately; the customer is charged the prorated difference
+- Downgrades take effect at the end of the current billing cycle
+- Cancellation stops renewal but access continues until the current period ends
+- Failed payment retries: day 1, day 3, day 7, then cancel with 48h grace period
+- Resubscribing within 30 days of cancellation restores the previous plan without setup fee
+
+## Out of Scope
+
+- Annual billing (v2)
+- Team/organization subscriptions (v2)
+- Usage-based billing
+- Multiple subscriptions per customer
+
+## Open Questions
+
+- [ ] Should we offer a pause option instead of cancel?
+- [ ] What happens to stored data when a subscription expires?
+```
+
+### Integration Spec
+
+For documenting contracts with external systems:
+
+```markdown
+---
+title: Stripe Integration
+type: integration
+owner: backend-team
+status: active
+last-reviewed: 2026-01-10
+---
+
+# Stripe Integration
+
+## What We Use
+
+- **Checkout Sessions** — For initial payment and subscription creation
+- **Customer Portal** — For self-service subscription management
+- **Webhooks** — For async payment status updates
+
+## Webhook Events We Handle
+
+| Event                           | Action                                  |
+| ------------------------------- | --------------------------------------- |
+| `checkout.session.completed`    | Activate subscription, provision access |
+| `invoice.payment_succeeded`     | Record payment, extend access period    |
+| `invoice.payment_failed`        | Start retry flow, notify customer       |
+| `customer.subscription.deleted` | Revoke access at period end             |
+
+## Webhook Events We Ignore
+
+- `charge.refunded` — We handle refunds through our own admin flow
+- `payment_intent.*` — We use Checkout Sessions, not direct PaymentIntents
+
+## Idempotency
+
+- All webhook handlers are idempotent — processing the same event twice produces the same result
+- We store `stripe_event_id` and skip duplicates
+
+## Environment
+
+- Test mode: `sk_test_*` — uses Stripe test clocks for subscription lifecycle testing
+- Live mode: `sk_live_*` — webhook endpoint verified with Stripe CLI during setup
+
+## Failure Modes
+
+- If Stripe is down: queue the operation and retry with exponential backoff
+- If webhook delivery fails: Stripe retries for up to 3 days — our handler is idempotent
+- If webhook signature verification fails: reject with 400, log for investigation
+```
+
+### Glossary (Ubiquitous Language)
+
+A single file that defines the shared vocabulary across the project:
+
+```markdown
+---
+title: Glossary
+type: domain
+status: active
+---
+
+# Glossary — Ubiquitous Language
+
+Terms used consistently across code, specs, and communication.
+
+| Term                | Definition                                                                                              | Context        |
+| ------------------- | ------------------------------------------------------------------------------------------------------- | -------------- |
+| **Tenant**          | An organization that uses the platform. Maps to one Supabase schema.                                    | Multi-tenancy  |
+| **Workspace**       | A subdivision within a tenant. Users belong to one or more workspaces.                                  | Authorization  |
+| **Seat**            | A billable user slot within a tenant. Unused seats still count toward the subscription.                 | Billing        |
+| **Provisioning**    | The automated process of setting up a new tenant: schema, RLS policies, seed data.                      | Onboarding     |
+| **Soft delete**     | Setting `deleted_at` timestamp instead of removing the row. Record is excluded from queries by default. | Data lifecycle |
+| **Idempotency key** | A client-generated UUID sent with mutation requests to prevent duplicate operations.                    | API            |
+```
+
+### Writing Specs for AI Consumption
+
+Guidelines to maximize the value of specs when used as context for AI tools:
+
+1. **Be explicit, not implicit** — "Orders over $500 require manager approval" is better than "large orders need approval"
+2. **Use tables for structured data** — AI models parse tables more reliably than prose lists
+3. **State invariants as absolutes** — "MUST", "CANNOT", "ALWAYS", "NEVER" — avoid ambiguity
+4. **Define terms before using them** — Reference the glossary or define terms inline
+5. **Include examples for edge cases** — "A 50% discount on a $1 item rounds to $0.50, not $0.49"
+6. **Keep specs atomic** — One bounded context or concern per file. Cross-reference with links, don't duplicate.
+7. **Version through git** — Specs are code artifacts. They get reviewed in PRs and have a history.
+8. **Add frontmatter** — `type`, `status`, `owner`, and `last-reviewed` make specs filterable and auditable
+9. **Mark open questions** — Use `[ ]` checkboxes for unresolved decisions so they're visible and trackable
+10. **Separate rules from implementation** — Specs say WHAT and WHY, not HOW. The code handles HOW.
+
+### When to Write Specs
+
+| Trigger                                    | Spec Type        |
+| ------------------------------------------ | ---------------- |
+| New bounded context or module              | Domain spec      |
+| Business rule that isn't obvious from code | Business rules   |
+| New feature with multiple stakeholders     | Feature spec     |
+| External API or service integration        | Integration spec |
+| Team uses terms inconsistently             | Glossary update  |
+| ADR references constraints — capture them  | Business rules   |
+
+---
+
 ## Output
 
 ```
@@ -783,6 +1096,11 @@ if (order.isValidForCheckout()) { ... }
 
 ### ADRs
 - ADR-003: Cursor pagination (context, decision, consequences)
+
+### Specs
+- Domain spec: `specs/domain/orders.md` — invariants, business rules, events, relationships
+- Business rules: `specs/business-rules/pricing.md` — discount hierarchy, tax, price guarantees
+- Glossary: `specs/glossary.md` — 6 terms defined
 
 ### Improvements
 - Removed 5 stale @param tags that didn't match current signatures
@@ -802,5 +1120,7 @@ if (order.isValidForCheckout()) { ... }
 - **TSDoc Specification** — microsoft.github.io/tsdoc
 - **Docs for Developers** — Jared Bhatti, Zachary Sarah Corleissen, Jen Lambourne, David Nunez, Heidi Waterhouse
 - **The Documentation System** — Divio (tutorials, how-to, reference, explanation)
-- **Living Documentation** — Cyrille Martraire
+- **Living Documentation** — Cyrille Martraire (specs as living artifacts, ubiquitous language)
+- **Domain-Driven Design** — Eric Evans (bounded contexts, ubiquitous language, domain events)
+- **Specification by Example** — Gojko Adzic (executable specs, collaborative specification)
 - **The Art of Readable Code** — Dustin Boswell & Trevor Foucher
