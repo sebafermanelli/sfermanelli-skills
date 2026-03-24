@@ -2,7 +2,7 @@
 
 Claude Code skills for software engineering — reusable across any project.
 
-15 skills covering the full development lifecycle: from architecture design to deployment, with TypeScript examples, DDD patterns, and references from recognized software engineering books.
+15 skills covering the full development lifecycle: from architecture design to deployment, with TypeScript examples, DDD patterns, Spec-Driven Design, and references from recognized software engineering books.
 
 ## Skills
 
@@ -42,7 +42,7 @@ Claude Code skills for software engineering — reusable across any project.
 
 | Skill             | Trigger                              | What it does                                                                |
 | ----------------- | ------------------------------------ | --------------------------------------------------------------------------- |
-| **write-docs**    | "document this", "add JSDoc"         | TSDoc, README structure, ADRs, Divio's 4 doc types, OpenAPI/Swagger         |
+| **write-docs**    | "document this", "write a spec"      | TSDoc, README, ADRs, Spec-Driven Design, AI-readable specs, OpenAPI/Swagger |
 | **explain-code**  | "what does this do", "explain this"  | Layered explanations, pattern naming, ASCII diagrams                        |
 | **accessibility** | "make this accessible", "a11y audit" | WCAG, ARIA widgets (tabs, combobox, dialog), keyboard patterns, axe testing |
 
@@ -83,6 +83,8 @@ Examples are in TypeScript and designed to be framework-agnostic, with specific 
 - **Designing Data-Intensive Applications** — Martin Kleppmann
 - **Release It!** — Michael Nygard
 - **Working Effectively with Legacy Code** — Michael Feathers
+- **Specification by Example** — Gojko Adzic
+- **Living Documentation** — Cyrille Martraire
 - **OWASP Top 10** / **Secure by Design**
 - **WCAG 2.1** / **WAI-ARIA Authoring Practices**
 - and more (see each SKILL.md for full references)
